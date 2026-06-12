@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #f1f5f9;
+  font-family: 'Segoe UI', sans-serif;
+}
+
+.card {
+  @apply bg-white rounded-2xl shadow-sm border border-slate-100 p-6;
+}
+
+.section-title {
+  @apply text-sm font-semibold text-slate-500 uppercase tracking-wider mb-4;
+}
+
+.value-text {
+  @apply text-2xl font-bold text-slate-800;
+}
+
+.label-text {
+  @apply text-xs text-slate-500 mt-1;
+}
