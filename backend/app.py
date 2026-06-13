@@ -46,7 +46,8 @@ app = FastAPI(title="Geotechnical Soil Report Analyzer API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins — restrict to specific URLs in production if needed
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
