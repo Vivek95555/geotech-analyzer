@@ -75,7 +75,7 @@ app.add_middleware(
 def extract_text_with_tesseract(pdf_bytes: bytes) -> str:
     """Extract text from PDF pages using Tesseract OCR."""
     log.info("Converting PDF to images at 300 DPI...")
-    pages = convert_from_bytes(pdf_bytes, dpi=300)
+    pages = convert_from_bytes(pdf_bytes, dpi=150)
     log.info(f"PDF has {len(pages)} page(s). Running OCR...")
 
     full_text = []
