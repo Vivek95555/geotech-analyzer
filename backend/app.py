@@ -2,14 +2,13 @@ import os
 import json
 import logging
 import time
+from io import BytesIO
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request as StarletteRequest
 from pdf2image import convert_from_bytes
-import pytesseract
 from google import genai
+from google.genai import types
 from dotenv import load_dotenv
 
 from geotech_prompt import build_extraction_prompt, build_recommendation_prompt
@@ -28,13 +27,6 @@ logging.basicConfig(
 )
 log = logging.getLogger("geotech-api")
 
-# Configure Tesseract
-# On Linux (Docker/Railway): /usr/bin/tesseract
-# On Windows (local): from .env
-tesseract_cmd = os.getenv("TESSERACT_CMD", "/usr/bin/tesseract")
-pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
-log.info(f"Tesseract: {tesseract_cmd}")
-
 # Configure Gemini
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
@@ -46,23 +38,6 @@ log.info(f"Gemini ready. Model: {GEMINI_MODEL}")
 
 app = FastAPI(title="Geotechnical Soil Report Analyzer API")
 
-# Custom CORS middleware — handles all origins including file uploads
-class CORSHandlerMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: StarletteRequest, call_next):
-        if request.method == "OPTIONS":
-            from starlette.responses import Response as StarletteResponse
-            response = StarletteResponse()
-            response.headers["Access-Control-Allow-Origin"] = "*"
-            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-            response.headers["Access-Control-Allow-Headers"] = "*"
-            return response
-        response = await call_next(request)
-        response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "*"
-        return response
-
-app.add_middleware(CORSHandlerMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -72,25 +47,41 @@ app.add_middleware(
 )
 
 
-def extract_text_with_tesseract(pdf_bytes: bytes) -> str:
-    """Extract text from PDF pages using Tesseract OCR."""
-    log.info("Converting PDF to images at 300 DPI...")
+def extract_text_with_gemini_vision(pdf_bytes: bytes) -> str:
+    """
+    Convert PDF pages to images and send to Gemini Vision for OCR.
+    Much faster than Tesseract on cloud servers — no CPU needed.
+    """
+    log.info("Converting PDF to images at 150 DPI...")
     pages = convert_from_bytes(pdf_bytes, dpi=150)
-    log.info(f"PDF has {len(pages)} page(s). Running OCR...")
+    log.info(f"PDF has {len(pages)} page(s). Sending to Gemini Vision...")
+    t = time.time()
 
-    full_text = []
+    # Build content parts — all page images + instruction
+    parts = []
     for i, page_image in enumerate(pages):
-        t = time.time()
-        text = pytesseract.image_to_string(page_image, lang="eng")
-        if len(text.strip()) > 100:
-            full_text.append(f"--- PAGE {i+1} ---\n{text}")
-            log.info(f"  Page {i+1}: {len(text)} chars in {time.time()-t:.1f}s")
-        else:
-            log.info(f"  Page {i+1}: skipped")
+        buf = BytesIO()
+        page_image.save(buf, format="JPEG", quality=80)
+        buf.seek(0)
+        parts.append(
+            types.Part.from_bytes(data=buf.read(), mime_type="image/jpeg")
+        )
 
-    combined = "\n\n".join(full_text).strip()
-    log.info(f"OCR complete. Total: {len(combined)} chars")
-    return combined
+    # Add text instruction
+    parts.append(types.Part.from_text(
+        "Extract ALL text from these soil investigation report pages exactly as written. "
+        "Preserve all numbers, units, table values, bore hole data, SPT N-values, "
+        "lab test results, and labels. Return only the extracted text, no commentary."
+    ))
+
+    response = gemini_client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=parts
+    )
+
+    text = response.text.strip()
+    log.info(f"Gemini Vision OCR complete in {time.time()-t:.1f}s — {len(text)} chars")
+    return text
 
 
 def call_gemini(prompt: str, label: str = "call") -> str:
@@ -167,8 +158,8 @@ async def analyze_soil_report(file: UploadFile = File(...)):
     try:
         total_start = time.time()
 
-        # Step 1: OCR
-        report_text = extract_text_with_tesseract(pdf_bytes)
+        # Step 1: Gemini Vision OCR — extract text from PDF images
+        report_text = extract_text_with_gemini_vision(pdf_bytes)
         if not report_text:
             raise HTTPException(status_code=422, detail="Could not extract text from the PDF.")
 
