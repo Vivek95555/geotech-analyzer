@@ -68,7 +68,7 @@ def extract_text_with_gemini_vision(pdf_bytes: bytes) -> str:
         )
 
     # Add text instruction
-    parts.append(types.Part.from_text(
+    parts.append(types.Part.from_text(text=
         "Extract ALL text from these soil investigation report pages exactly as written. "
         "Preserve all numbers, units, table values, bore hole data, SPT N-values, "
         "lab test results, and labels. Return only the extracted text, no commentary."
