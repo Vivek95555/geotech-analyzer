@@ -17,8 +17,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Expose port
-EXPOSE 5000
+# Expose port (Render overrides this with $PORT at runtime)
+EXPOSE 10000
 
-# Start the server
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "5000"]
+# Start the server — use $PORT provided by Render (defaults to 10000)
+CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-10000}"]
