@@ -7,8 +7,9 @@ from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pdf2image import convert_from_bytes
-from google import genai
-from google.genai import types
+import vertexai
+from vertexai.generative_models import GenerativeModel, Part
+from google.oauth2 import service_account
 from dotenv import load_dotenv
 
 from geotech_prompt import build_extraction_prompt, build_recommendation_prompt
@@ -27,14 +28,28 @@ logging.basicConfig(
 )
 log = logging.getLogger("geotech-api")
 
-# Configure Gemini
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise ValueError("GEMINI_API_KEY not found in .env file")
-
-gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+# Configure Vertex AI using service account credentials
+GCP_PROJECT = os.getenv("GCP_PROJECT_ID", "gen-lang-client-0435750071")
+GCP_LOCATION = os.getenv("GCP_LOCATION", "us-central1")
 GEMINI_MODEL = "gemini-2.5-flash"
-log.info(f"Gemini ready. Model: {GEMINI_MODEL}")
+
+# Load credentials from environment variable (JSON string)
+SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+if SERVICE_ACCOUNT_JSON:
+    service_account_info = json.loads(SERVICE_ACCOUNT_JSON)
+    credentials = service_account.Credentials.from_service_account_info(
+        service_account_info,
+        scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    )
+    vertexai.init(project=GCP_PROJECT, location=GCP_LOCATION, credentials=credentials)
+    log.info(f"Vertex AI initialized with service account. Project: {GCP_PROJECT}")
+else:
+    # Fallback: use application default credentials (local dev)
+    vertexai.init(project=GCP_PROJECT, location=GCP_LOCATION)
+    log.info(f"Vertex AI initialized with default credentials. Project: {GCP_PROJECT}")
+
+gemini_model = GenerativeModel(GEMINI_MODEL)
+log.info(f"Gemini model ready: {GEMINI_MODEL}")
 
 app = FastAPI(title="Geotechnical Soil Report Analyzer API")
 
@@ -48,52 +63,36 @@ app.add_middleware(
 
 
 def extract_text_with_gemini_vision(pdf_bytes: bytes) -> str:
-    """
-    Convert PDF pages to images and send to Gemini Vision for OCR.
-    Much faster than Tesseract on cloud servers — no CPU needed.
-    """
+    """Convert PDF pages to images and send to Gemini Vision for OCR."""
     log.info("Converting PDF to images at 150 DPI...")
     pages = convert_from_bytes(pdf_bytes, dpi=150)
     log.info(f"PDF has {len(pages)} page(s). Sending to Gemini Vision...")
     t = time.time()
 
-    # Build content parts — all page images + instruction
     parts = []
-    for i, page_image in enumerate(pages):
+    for page_image in pages:
         buf = BytesIO()
         page_image.save(buf, format="JPEG", quality=80)
         buf.seek(0)
-        parts.append(
-            types.Part.from_bytes(data=buf.read(), mime_type="image/jpeg")
-        )
+        parts.append(Part.from_data(data=buf.read(), mime_type="image/jpeg"))
 
-    # Add text instruction
-    parts.append(types.Part.from_text(text=
+    parts.append(Part.from_text(
         "Extract ALL text from these soil investigation report pages exactly as written. "
         "Preserve all numbers, units, table values, bore hole data, SPT N-values, "
         "lab test results, and labels. Return only the extracted text, no commentary."
     ))
 
-    response = gemini_client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=parts
-    )
-
+    response = gemini_model.generate_content(parts)
     text = response.text.strip()
     log.info(f"Gemini Vision OCR complete in {time.time()-t:.1f}s — {len(text)} chars")
     return text
 
 
 def call_gemini(prompt: str, label: str = "call") -> str:
-    """Call Gemini API and return response text."""
+    """Call Gemini via Vertex AI and return response text."""
     log.info(f"Gemini [{label}] — prompt: {len(prompt)} chars")
     t = time.time()
-
-    response = gemini_client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=prompt
-    )
-
+    response = gemini_model.generate_content(prompt)
     result = response.text.strip()
     log.info(f"Gemini [{label}] done in {time.time()-t:.1f}s — {len(result)} chars")
     return result
@@ -158,7 +157,7 @@ async def analyze_soil_report(file: UploadFile = File(...)):
     try:
         total_start = time.time()
 
-        # Step 1: Gemini Vision OCR — extract text from PDF images
+        # Step 1: Gemini Vision OCR
         report_text = extract_text_with_gemini_vision(pdf_bytes)
         if not report_text:
             raise HTTPException(status_code=422, detail="Could not extract text from the PDF.")
@@ -221,21 +220,17 @@ def export_report(report_id: str):
     report = get_report_by_id(report_id)
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
-
     try:
         pdf_bytes = generate_report_pdf(
             extracted_data=report["extracted_data"],
             risk_assessment=report["risk_assessment"],
             recommendations=report["recommendations"]
         )
-
         project_name = (report.get("project_name") or "report").replace(" ", "_")[:30]
-        filename = f"geotech_{project_name}.pdf"
-
         return Response(
             content=pdf_bytes,
             media_type="application/pdf",
-            headers={"Content-Disposition": f"attachment; filename={filename}"}
+            headers={"Content-Disposition": f"attachment; filename=geotech_{project_name}.pdf"}
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(e)}")
@@ -243,7 +238,6 @@ def export_report(report_id: str):
 
 @app.get("/reports")
 def list_reports():
-    """Get all saved reports (metadata only)."""
     try:
         return {"reports": get_all_reports()}
     except Exception as e:
@@ -252,7 +246,6 @@ def list_reports():
 
 @app.get("/reports/{report_id}")
 def get_report(report_id: str):
-    """Get full report by ID."""
     report = get_report_by_id(report_id)
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
@@ -261,11 +254,10 @@ def get_report(report_id: str):
 
 @app.delete("/reports/{report_id}")
 def remove_report(report_id: str):
-    """Delete a report."""
     delete_report(report_id)
     return {"message": "Report deleted"}
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=5000, reload=True)
+    uvicorn.run("app:app", host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
