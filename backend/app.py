@@ -7,9 +7,10 @@ from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pdf2image import convert_from_bytes
-import vertexai
-from vertexai.generative_models import GenerativeModel, Part
+from google import genai
+from google.genai import types
 from google.oauth2 import service_account
+import google.auth.transport.requests
 from dotenv import load_dotenv
 
 from geotech_prompt import build_extraction_prompt, build_recommendation_prompt
@@ -28,28 +29,35 @@ logging.basicConfig(
 )
 log = logging.getLogger("geotech-api")
 
-# Configure Vertex AI using service account credentials
+# Configure Gemini via service account (uses GCP billing + credits)
 GCP_PROJECT = os.getenv("GCP_PROJECT_ID", "gen-lang-client-0435750071")
 GCP_LOCATION = os.getenv("GCP_LOCATION", "us-central1")
 GEMINI_MODEL = "gemini-2.5-flash"
 
-# Load credentials from environment variable (JSON string)
 SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
 if SERVICE_ACCOUNT_JSON:
-    service_account_info = json.loads(SERVICE_ACCOUNT_JSON)
+    sa_info = json.loads(SERVICE_ACCOUNT_JSON)
     credentials = service_account.Credentials.from_service_account_info(
-        service_account_info,
+        sa_info,
         scopes=["https://www.googleapis.com/auth/cloud-platform"]
     )
-    vertexai.init(project=GCP_PROJECT, location=GCP_LOCATION, credentials=credentials)
-    log.info(f"Vertex AI initialized with service account. Project: {GCP_PROJECT}")
+    # Refresh token
+    request = google.auth.transport.requests.Request()
+    credentials.refresh(request)
+    gemini_client = genai.Client(
+        vertexai=True,
+        project=GCP_PROJECT,
+        location=GCP_LOCATION,
+        credentials=credentials
+    )
+    log.info(f"Gemini client initialized via service account. Project: {GCP_PROJECT}")
 else:
-    # Fallback: use application default credentials (local dev)
-    vertexai.init(project=GCP_PROJECT, location=GCP_LOCATION)
-    log.info(f"Vertex AI initialized with default credentials. Project: {GCP_PROJECT}")
+    # Fallback for local dev with API key
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+    gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+    log.info("Gemini client initialized via API key.")
 
-gemini_model = GenerativeModel(GEMINI_MODEL)
-log.info(f"Gemini model ready: {GEMINI_MODEL}")
+log.info(f"Model: {GEMINI_MODEL}")
 
 app = FastAPI(title="Geotechnical Soil Report Analyzer API")
 
@@ -74,25 +82,31 @@ def extract_text_with_gemini_vision(pdf_bytes: bytes) -> str:
         buf = BytesIO()
         page_image.save(buf, format="JPEG", quality=80)
         buf.seek(0)
-        parts.append(Part.from_data(data=buf.read(), mime_type="image/jpeg"))
+        parts.append(types.Part.from_bytes(data=buf.read(), mime_type="image/jpeg"))
 
-    parts.append(Part.from_text(
+    parts.append(types.Part.from_text(text=
         "Extract ALL text from these soil investigation report pages exactly as written. "
         "Preserve all numbers, units, table values, bore hole data, SPT N-values, "
         "lab test results, and labels. Return only the extracted text, no commentary."
     ))
 
-    response = gemini_model.generate_content(parts)
+    response = gemini_client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=parts
+    )
     text = response.text.strip()
     log.info(f"Gemini Vision OCR complete in {time.time()-t:.1f}s — {len(text)} chars")
     return text
 
 
 def call_gemini(prompt: str, label: str = "call") -> str:
-    """Call Gemini via Vertex AI and return response text."""
+    """Call Gemini and return response text."""
     log.info(f"Gemini [{label}] — prompt: {len(prompt)} chars")
     t = time.time()
-    response = gemini_model.generate_content(prompt)
+    response = gemini_client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=prompt
+    )
     result = response.text.strip()
     log.info(f"Gemini [{label}] done in {time.time()-t:.1f}s — {len(result)} chars")
     return result
@@ -133,6 +147,11 @@ def get_recommendations(report_text: str, extracted_data: dict) -> str:
     log.info("Generating recommendations...")
     prompt = build_recommendation_prompt(report_text, extracted_data)
     return call_gemini(prompt, "recommendations")
+
+
+@app.get("/")
+def root():
+    return {"status": "ok", "service": "Geotechnical Soil Report Analyzer API"}
 
 
 @app.get("/health")
