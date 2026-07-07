@@ -72,17 +72,19 @@ app.add_middleware(
 
 def extract_text_with_gemini_vision(pdf_bytes: bytes) -> str:
     """Convert PDF pages to images and send to Gemini Vision for OCR."""
-    log.info("Converting PDF to images at 150 DPI...")
-    pages = convert_from_bytes(pdf_bytes, dpi=150)
+    log.info("Converting PDF to images at 90 DPI...")
+    pages = convert_from_bytes(pdf_bytes, dpi=90)
     log.info(f"PDF has {len(pages)} page(s). Sending to Gemini Vision...")
     t = time.time()
 
     parts = []
     for page_image in pages:
         buf = BytesIO()
-        page_image.save(buf, format="JPEG", quality=80)
+        page_image.save(buf, format="JPEG", quality=70)
         buf.seek(0)
         parts.append(types.Part.from_bytes(data=buf.read(), mime_type="image/jpeg"))
+        # Release image memory immediately
+        page_image.close()
 
     parts.append(types.Part.from_text(text=
         "Extract ALL text from these soil investigation report pages exactly as written. "
