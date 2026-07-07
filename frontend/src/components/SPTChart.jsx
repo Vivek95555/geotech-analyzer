@@ -22,54 +22,97 @@ export default function SPTChart({ boreHoles }) {
 
   if (data.length === 0) return null;
 
-  const getColor = (n) => {
-    if (n < 5)  return "#ef4444"; // red — very loose
-    if (n < 10) return "#f97316"; // orange — loose
-    if (n < 30) return "#eab308"; // yellow — medium
-    if (n < 50) return "#22c55e"; // green — dense
-    return "#3b82f6";             // blue — very dense
+  const getGradientUrl = (n) => {
+    if (n < 5)  return "url(#veryLoose)"; 
+    if (n < 10) return "url(#loose)"; 
+    if (n < 30) return "url(#medium)"; 
+    if (n < 50) return "url(#dense)"; 
+    return "url(#veryDense)";             
+  };
+
+  const getBaseColor = (n) => {
+    if (n < 5)  return "#ef4444"; 
+    if (n < 10) return "#f97316"; 
+    if (n < 30) return "#eab308"; 
+    if (n < 50) return "#22c55e"; 
+    return "#3b82f6";             
   };
 
   return (
-    <div className="card">
-      <p className="section-title">📈 SPT N-Value vs Depth</p>
-      <div className="flex gap-3 mb-4 flex-wrap">
+    <div className="glass-card">
+      <p className="section-title text-indigo-400">
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+        </svg>
+        Standard Penetration Test (SPT) Profile
+      </p>
+
+      {/* Legend list */}
+      <div className="flex gap-3 mb-6 flex-wrap">
         {[
-          { color: "#ef4444", label: "N<5 Very Loose" },
-          { color: "#f97316", label: "N<10 Loose" },
-          { color: "#eab308", label: "N<30 Medium" },
-          { color: "#22c55e", label: "N<50 Dense" },
-          { color: "#3b82f6", label: "N≥50 Very Dense" },
+          { color: "bg-[#ef4444]", label: "N < 5 (Very Loose)" },
+          { color: "bg-[#f97316]", label: "N < 10 (Loose)" },
+          { color: "bg-[#eab308]", label: "N < 30 (Medium)" },
+          { color: "bg-[#22c55e]", label: "N < 50 (Dense)" },
+          { color: "bg-[#3b82f6]", label: "N ≥ 50 (Very Dense)" },
         ].map((l) => (
-          <div key={l.label} className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: l.color }}></div>
-            <span className="text-xs text-slate-500">{l.label}</span>
+          <div key={l.label} className="flex items-center gap-1.5 bg-[var(--color-panel-bg)] px-2.5 py-1 rounded-lg border border-[var(--color-panel-border)] text-[10px] transition-colors">
+            <div className={`w-2 h-2 rounded-full ${l.color}`}></div>
+            <span className="text-[var(--color-text)] font-semibold">{l.label}</span>
           </div>
         ))}
       </div>
+
       <ResponsiveContainer width="100%" height={280}>
-        <BarChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-          <XAxis dataKey="depth" tick={{ fontSize: 11 }} label={{ value: "Depth", position: "insideBottom", offset: -2 }} />
-          <YAxis tick={{ fontSize: 11 }} label={{ value: "N Value", angle: -90, position: "insideLeft" }} />
+        <BarChart data={data} margin={{ top: 15, right: 10, left: -20, bottom: 5 }}>
+          <defs>
+            <linearGradient id="veryLoose" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#ef4444" stopOpacity={0.85}/>
+              <stop offset="100%" stopColor="#ef4444" stopOpacity={0.15}/>
+            </linearGradient>
+            <linearGradient id="loose" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#f97316" stopOpacity={0.85}/>
+              <stop offset="100%" stopColor="#f97316" stopOpacity={0.15}/>
+            </linearGradient>
+            <linearGradient id="medium" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#eab308" stopOpacity={0.85}/>
+              <stop offset="100%" stopColor="#eab308" stopOpacity={0.15}/>
+            </linearGradient>
+            <linearGradient id="dense" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#22c55e" stopOpacity={0.85}/>
+              <stop offset="100%" stopColor="#22c55e" stopOpacity={0.15}/>
+            </linearGradient>
+            <linearGradient id="veryDense" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.85}/>
+              <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.15}/>
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--color-card-border)" opacity={0.4} />
+          <XAxis dataKey="depth" stroke="var(--color-text-muted)" tick={{ fontSize: 9, fill: "var(--color-text)" }} label={{ value: "Midpoint Depth", position: "insideBottom", offset: -2, fill: "var(--color-text-title)", fontSize: 10 }} />
+          <YAxis stroke="var(--color-text-muted)" tick={{ fontSize: 9, fill: "var(--color-text)" }} label={{ value: "N Blow Count", angle: -90, position: "insideLeft", offset: 10, fill: "var(--color-text-title)", fontSize: 10 }} />
           <Tooltip
+            cursor={{ fill: "rgba(148, 163, 184, 0.05)" }}
             content={({ active, payload }) => {
               if (!active || !payload?.length) return null;
               const d = payload[0].payload;
+              const dotColor = getBaseColor(d.n_value);
               return (
-                <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-lg text-sm">
-                  <p className="font-bold text-slate-800">Depth: {d.depth}</p>
-                  <p className="text-blue-600 font-semibold">N = {d.n_value}</p>
-                  <p className="text-slate-500 text-xs mt-1 max-w-48">{d.description}</p>
+                <div className="glass-card border-[var(--color-card-border)] bg-[var(--color-card-bg)] p-3.5 shadow-xl text-xs max-w-[220px]">
+                  <p className="font-bold text-[var(--color-text)]">Interval depth: {d.depth}</p>
+                  <p className="font-extrabold text-sm mt-1 flex items-center gap-1.5" style={{ color: dotColor }}>
+                    <span className="w-2 h-2 rounded-full bg-current"></span>
+                    Blow Count N = {d.n_value}
+                  </p>
+                  <p className="text-[var(--color-text-muted)] text-[10px] leading-relaxed mt-1.5 border-t border-[var(--color-border)] pt-1.5">{d.description}</p>
                 </div>
               );
             }}
           />
-          <ReferenceLine y={10} stroke="#f97316" strokeDasharray="4 2" label={{ value: "N=10", fontSize: 10 }} />
-          <ReferenceLine y={30} stroke="#22c55e" strokeDasharray="4 2" label={{ value: "N=30", fontSize: 10 }} />
-          <Bar dataKey="n_value" radius={[4, 4, 0, 0]}>
+          <ReferenceLine y={10} stroke="#f97316" strokeDasharray="4 2" strokeOpacity={0.5} label={{ value: "N=10 (Loose Threshold)", fontSize: 8, fill: "#f97316", position: "top" }} />
+          <ReferenceLine y={30} stroke="#22c55e" strokeDasharray="4 2" strokeOpacity={0.5} label={{ value: "N=30 (Dense Threshold)", fontSize: 8, fill: "#22c55e", position: "top" }} />
+          <Bar dataKey="n_value" radius={[6, 6, 0, 0]}>
             {data.map((entry, i) => (
-              <Cell key={i} fill={getColor(entry.n_value)} />
+              <Cell key={i} fill={getGradientUrl(entry.n_value)} stroke={getBaseColor(entry.n_value)} strokeWidth={1} />
             ))}
           </Bar>
         </BarChart>
@@ -77,3 +120,4 @@ export default function SPTChart({ boreHoles }) {
     </div>
   );
 }
+
