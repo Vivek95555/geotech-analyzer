@@ -30,8 +30,8 @@ export default function RiskBadge({ riskAssessment }) {
 
         <div className="flex flex-col sm:flex-row items-center gap-6 mb-6">
           {/* Gauge Widget */}
-          <div className="relative w-44 h-28 flex justify-center shrink-0">
-            <svg width="176" height="110" viewBox="0 0 180 110" className="overflow-visible">
+          <div className="relative w-44 h-32 flex justify-center shrink-0">
+            <svg width="176" height="128" viewBox="0 0 180 130" className="overflow-visible">
               {/* Background Track */}
               <path
                 d="M 10 100 A 80 80 0 0 1 170 100"
@@ -51,16 +51,13 @@ export default function RiskBadge({ riskAssessment }) {
                 strokeDashoffset={offset}
                 className="transition-all duration-1000 ease-out"
               />
-              {/* Needle pivot */}
-              <circle cx="90" cy="100" r="8" fill="var(--color-bg)" stroke="var(--color-input-border)" strokeWidth="1" />
-              <circle cx="90" cy="100" r="5" fill={cfg.bar} />
               
-              {/* Needle pointer */}
+              {/* Needle pointer (rendered first so it sits behind the central hub) */}
               <line
                 x1="90"
                 y1="100"
                 x2="90"
-                y2="30"
+                y2="28"
                 stroke={cfg.bar}
                 strokeWidth="3.5"
                 strokeLinecap="round"
@@ -70,9 +67,16 @@ export default function RiskBadge({ riskAssessment }) {
                   transition: "transform 1.2s cubic-bezier(0.34, 1.56, 0.64, 1)"
                 }}
               />
-              {/* Text Score */}
-              <text x="90" y="88" textAnchor="middle" fill="var(--color-text-title)" className="text-2xl font-black">{risk_score}</text>
-              <text x="90" y="103" textAnchor="middle" fill="var(--color-text-muted)" className="text-[9px] font-bold tracking-widest uppercase">Score</text>
+              
+              {/* Central Hub Cap (rendered on top of the needle to mask its pivot) */}
+              {/* Outer Hub Ring */}
+              <circle cx="90" cy="100" r="32" fill="var(--color-bg)" stroke="var(--color-card-border)" strokeWidth="1.5" className="transition-colors duration-300" />
+              {/* Inner Hub Circle */}
+              <circle cx="90" cy="100" r="26" fill="var(--color-panel-bg)" stroke="var(--color-border)" strokeWidth="0.5" className="transition-colors duration-300" />
+              
+              {/* Digital Score text inside the Hub */}
+              <text x="90" y="96" textAnchor="middle" fill="var(--color-text-title)" className="text-xl font-extrabold tracking-tight transition-colors duration-300">{risk_score}</text>
+              <text x="90" y="109" textAnchor="middle" fill="var(--color-text-muted)" className="text-[7.5px] font-bold tracking-widest uppercase transition-colors duration-300">Score</text>
             </svg>
           </div>
 
